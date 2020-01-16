@@ -28,6 +28,11 @@ static float rescale_inv(float t, float min, float max, PlotConfig::Scale::Type 
     return 0;
 }
 
+// Inverse function to ImLerp
+template<typename T> static inline T lerp_inv(T a, T b, T l) {
+    return static_cast<T>((l - a) / (b - a));
+}
+
 static int cursor_to_idx(const ImVec2& pos, const ImRect& bb, const PlotConfig& conf, float x_min, float x_max) {
     const float t = ImClamp((pos.x - bb.Min.x) / (bb.Max.x - bb.Min.x), 0.0f, 0.9999f);
     const int v_idx = static_cast<int>(rescale_inv(t, x_min, x_max, conf.scale.type) * static_cast<double>(conf.values.count - 1) + 0.5f);
@@ -204,8 +209,9 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
 
         if (conf.v_lines.show) {
             for (size_t i = 0; i < conf.v_lines.count; ++i) {
-                const size_t idx = conf.v_lines.indices[i];
-                const float t1 = rescale(idx * t_step, x_min, x_max, conf.scale.type);
+                float x = lerp_inv(x_min, x_max, conf.v_lines.xs[i]);
+                if (x < 0.0f || x > 1.0f) { continue; }
+                const float t1 = rescale(x, x_min, x_max, conf.scale.type);
                 ImVec2 pos0 = ImLerp(inner_bb.Min, inner_bb.Max, ImVec2(t1, 0.f));
                 ImVec2 pos1 = ImLerp(inner_bb.Min, inner_bb.Max, ImVec2(t1, 1.f));
                 window->DrawList->AddLine(pos0, pos1, IM_COL32(0xff, 0, 0, 0x88));

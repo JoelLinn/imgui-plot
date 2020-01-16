@@ -57,7 +57,7 @@ struct PlotConfig {
     } selection;
     struct VerticalLines {
         bool show = false;
-        const size_t* indices = nullptr; // at which indices to draw the lines
+        const float* xs = nullptr; // at which x values to draw the lines
         size_t count = 0;
     } v_lines;
     // Set size to -1 to fill parent window
