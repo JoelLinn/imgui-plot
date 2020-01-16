@@ -60,7 +60,8 @@ struct PlotConfig {
         const size_t* indices = nullptr; // at which indices to draw the lines
         size_t count = 0;
     } v_lines;
-    ImVec2 frame_size = ImVec2(0.f, 0.f);
+    // Set size to -1 to fill parent window
+    ImVec2 frame_size = ImVec2(-1.f, 0.f);
     float line_thickness = 1.f;
     bool skip_small_lines = true;
     const char* overlay_text = nullptr;

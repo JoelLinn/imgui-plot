@@ -58,7 +58,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
 
     const ImRect frame_bb(
         window->DC.CursorPos,
-        window->DC.CursorPos + conf.frame_size);
+        window->DC.CursorPos + ImVec2(conf.frame_size.x < 0 ? window->WorkRect.GetSize().x : conf.frame_size.x, conf.frame_size.y < 0 ? window->WorkRect.GetSize().y : conf.frame_size.y));
     const ImRect inner_bb(
         frame_bb.Min + style.FramePadding,
         frame_bb.Max - style.FramePadding);
