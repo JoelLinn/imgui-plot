@@ -41,11 +41,14 @@ struct PlotConfig {
         bool show = false;
         const char* format = "%g: %8.4g";
     } tooltip;
-    struct Grid {
-        bool show = false;
-        float size = 100; // at which intervals to draw the grid
-        int subticks = 10; // how many subticks in each tick
-    } grid_x, grid_y;
+    struct Axis {
+        bool grid_show = false;
+        bool label_show_bl = false; // show labels bottom or left respectively
+        bool label_show_tr = false; // show labels top or right respectively
+        float tick_distance = 100; // at which intervals to draw the grid or label
+        unsigned int tick_subs = 9; // how many subticks between each tick
+        const char* label_format = "%g";
+    } axis_x, axis_y;
     struct Selection {
         bool show = false;
         uint32_t* start = nullptr;

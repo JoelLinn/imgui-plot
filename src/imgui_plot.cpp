@@ -64,14 +64,13 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
     const ImRect frame_bb(
         window->DC.CursorPos,
         window->DC.CursorPos + ImVec2(conf.frame_size.x < 0 ? window->WorkRect.GetSize().x : conf.frame_size.x, conf.frame_size.y < 0 ? window->WorkRect.GetSize().y : conf.frame_size.y));
-    const ImRect inner_bb(
-        frame_bb.Min + style.FramePadding,
-        frame_bb.Max - style.FramePadding);
     const ImRect total_bb = frame_bb;
     ItemSize(total_bb, style.FramePadding.y);
     if (!ItemAdd(total_bb, 0, &frame_bb))
         return status;
     const bool hovered = ItemHoverable(frame_bb, id);
+
+    ImRect overlay_bb = frame_bb;
 
     RenderFrame(
         frame_bb.Min,
@@ -80,11 +79,86 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         true,
         style.FrameRounding);
 
-    if (inner_bb.GetSize().x <= 0 || inner_bb.GetSize().y <= 0) {
-        return status;
-    }
-
     if (conf.values.count > 1) {
+        float x_min = conf.values.offset;
+        float x_max = conf.values.offset + conf.values.count - 1;
+        if (conf.values.xs) {
+            x_min = conf.values.xs[size_t(x_min)];
+            x_max = conf.values.xs[size_t(x_max)];
+        }
+
+        struct AxisInfo {
+            ImVec2 legend_largest = ImVec2(.0f, .0f);
+            float tick_count = .0f;
+            float tick_inc = 0.f;
+            float tick_first = .0f;
+        } axis_info_x, axis_info_y;
+
+        // Precalculate basic axis parameters since the plot area depends on text widths
+        if (conf.axis_x.grid_show || conf.axis_x.label_show_bl || conf.axis_x.label_show_tr) {
+            switch (conf.scale.type) {
+            case PlotConfig::Scale::Linear: {
+                axis_info_x.tick_count = (x_max - x_min) / (conf.axis_x.tick_distance / (conf.axis_x.tick_subs + 1));
+                axis_info_x.tick_inc = 1.f / axis_info_x.tick_count;
+                // calculate nearest multiple of tick_distance to x_min and do inverse lerp:
+                axis_info_x.tick_first = lerp_inv(x_min, x_max, (static_cast<int>(x_min / conf.axis_x.tick_distance)* conf.axis_x.tick_distance));
+                axis_info_x.tick_count += conf.axis_x.tick_subs + 1;
+                if (!conf.axis_x.label_show_bl && !conf.axis_x.label_show_tr) { break; }
+                for (int i = 0; i <= axis_info_x.tick_count; i += conf.axis_x.tick_subs + 1) {
+                    const float tick_pos = axis_info_x.tick_first + i * axis_info_x.tick_inc;
+                    if (tick_pos < 0.0f) continue;
+                    if (tick_pos > 1.0f) break;
+                    const float x_val = ImLerp(x_min, x_max, tick_pos);
+                    const char* text_end = g.TempBuffer + ImFormatString(g.TempBuffer, IM_ARRAYSIZE(g.TempBuffer), conf.axis_x.label_format, x_val);
+                    const ImVec2 text_size = CalcTextSize(g.TempBuffer, text_end);
+                    if (text_size.x > axis_info_x.legend_largest.x) { axis_info_x.legend_largest.x = text_size.x; }
+                    if (text_size.y > axis_info_x.legend_largest.y) { axis_info_x.legend_largest.y = text_size.y; }
+                }
+                break;
+            }
+            case PlotConfig::Scale::Log10: {
+                if (!conf.axis_x.label_show_bl && !conf.axis_x.label_show_tr) { break; }
+                for (float i = 1; i <= x_max; i *= 10)
+                {
+                    if (i < x_min) continue;
+                    const char* text_end = g.TempBuffer + ImFormatString(g.TempBuffer, IM_ARRAYSIZE(g.TempBuffer), conf.axis_x.label_format, i);
+                    const ImVec2 text_size = CalcTextSize(g.TempBuffer, text_end);
+                    if (text_size.x > axis_info_x.legend_largest.x) { axis_info_x.legend_largest.x = text_size.x; }
+                    if (text_size.y > axis_info_x.legend_largest.y) { axis_info_x.legend_largest.y = text_size.y; }
+                }
+                break;
+            }
+            }
+        }
+        if (conf.axis_y.grid_show || conf.axis_y.label_show_tr || conf.axis_y.label_show_bl) {
+            axis_info_y.tick_count = (conf.scale.max - conf.scale.min) / (conf.axis_y.tick_distance / (conf.axis_y.tick_subs + 1));
+            axis_info_y.tick_inc = 1.f / axis_info_y.tick_count;
+            axis_info_y.tick_first = lerp_inv(conf.scale.min, conf.scale.max, (static_cast<int>(conf.scale.min / conf.axis_y.tick_distance)* conf.axis_y.tick_distance));
+            axis_info_y.tick_count += conf.axis_y.tick_subs + 1;
+            if (conf.axis_y.label_show_bl || conf.axis_y.label_show_tr) {
+                for (int i = 0; i <= axis_info_y.tick_count; i += conf.axis_y.tick_subs + 1) {
+                    const float tick_pos = axis_info_y.tick_first + i * axis_info_y.tick_inc;
+                    if (tick_pos < 0.0f) continue;
+                    if (tick_pos > 1.0f) break;
+                    // Todo make this position properly
+                    const float y_val = ImLerp(conf.scale.min, conf.scale.max, tick_pos);
+                    const char* text_end = g.TempBuffer + ImFormatString(g.TempBuffer, IM_ARRAYSIZE(g.TempBuffer), conf.axis_y.label_format, y_val);
+                    const ImVec2 text_size = CalcTextSize(g.TempBuffer, text_end);
+                    if (text_size.x > axis_info_y.legend_largest.x) { axis_info_y.legend_largest.x = text_size.x; }
+                    if (text_size.y > axis_info_y.legend_largest.y) { axis_info_y.legend_largest.y = text_size.y; }
+                }
+            }
+        }
+
+        const ImRect inner_bb(
+            frame_bb.Min + style.FramePadding + ImVec2(conf.axis_y.label_show_bl ? axis_info_y.legend_largest.x : 0, conf.axis_x.label_show_tr ? axis_info_x.legend_largest.y : 0),
+            frame_bb.Max - style.FramePadding - ImVec2(conf.axis_y.label_show_tr ? axis_info_y.legend_largest.x : 0, conf.axis_x.label_show_bl ? axis_info_x.legend_largest.y : 0));
+        overlay_bb = inner_bb;
+
+        if (inner_bb.GetSize().x <= 0 || inner_bb.GetSize().y <= 0) {
+            return status;
+        }
+
         int res_w;
         if (conf.skip_small_lines)
             res_w = ImMin(static_cast<int>(inner_bb.GetSize().x), conf.values.count);
@@ -92,13 +166,6 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             res_w = conf.values.count;
         res_w -= 1;
         int item_count = conf.values.count - 1;
-
-        float x_min = conf.values.offset;
-        float x_max = conf.values.offset + conf.values.count - 1;
-        if (conf.values.xs) {
-            x_min = conf.values.xs[size_t(x_min)];
-            x_max = conf.values.xs[size_t(x_max)];
-        }
 
         // Tooltip on hover
         int v_hovered = -1;
@@ -113,55 +180,104 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
 
         const float t_step = 1.0f / (float)res_w;
         const float inv_scale = (conf.scale.min == conf.scale.max) ?
-                                    0.0f : (1.0f / (conf.scale.max - conf.scale.min));
+            0.0f : (1.0f / (conf.scale.max - conf.scale.min));
 
-        if (conf.grid_x.show) {
+        if (conf.axis_x.grid_show || conf.axis_x.label_show_bl || conf.axis_x.label_show_tr) {
             int y0 = inner_bb.Min.y;
             int y1 = inner_bb.Max.y;
             switch (conf.scale.type) {
             case PlotConfig::Scale::Linear: {
-                float cnt = conf.values.count / (conf.grid_x.size / conf.grid_x.subticks);
-                float inc = 1.f / cnt;
-                for (int i = 0; i <= cnt; ++i) {
-                    int x0 = ImLerp(inner_bb.Min.x, inner_bb.Max.x, i * inc);
-                    window->DrawList->AddLine(
-                        ImVec2(x0, y0),
-                        ImVec2(x0, y1),
-                        IM_COL32(200, 200, 200, (i % conf.grid_x.subticks) ? 128 : 255));
+                for (int i = 0; i <= axis_info_x.tick_count; ++i) {
+                    const float tick_pos = axis_info_x.tick_first + i * axis_info_x.tick_inc;
+                    const bool isSub = i % (conf.axis_x.tick_subs + 1);
+                    if (tick_pos < 0.0f) continue;
+                    if (tick_pos > 1.0f) break;
+                    int x0 = ImLerp(inner_bb.Min.x, inner_bb.Max.x, tick_pos);
+                    if (conf.axis_x.grid_show) {
+                        window->DrawList->AddLine(
+                            ImVec2(x0, y0),
+                            ImVec2(x0, y1),
+                            IM_COL32(200, 200, 200, isSub ? 128 : 255));
+                    }
+                    if (!isSub) {
+                        const float x_val = ImLerp(x_min, x_max, tick_pos);
+                        const char* text_end = g.TempBuffer + ImFormatString(g.TempBuffer, IM_ARRAYSIZE(g.TempBuffer), conf.axis_x.label_format, x_val);
+                        const ImVec2 text_size = CalcTextSize(g.TempBuffer, text_end);
+                        const float text_pos_x = ImClamp(x0 - text_size.x / 2, inner_bb.Min.x, inner_bb.Max.x - text_size.x);
+                        if (conf.axis_x.label_show_bl) {
+                            // bottom
+                            RenderText(ImVec2(text_pos_x, y1), g.TempBuffer, text_end, false);
+                        }
+                        if (conf.axis_x.label_show_tr) {
+                            // top
+                            RenderText(ImVec2(text_pos_x, y0 - text_size.y), g.TempBuffer, text_end, false);
+                        }
+                    }
                 }
                 break;
             }
             case PlotConfig::Scale::Log10: {
-                float start = 1.f;
-                while (start < x_max) {
+                for (int start = 1; start <= x_max; start *= 10)
+                {
                     for (int i = 1; i < 10; ++i) {
                         float x = start * i;
+                        const bool isSub = i > 1;
                         if (x < x_min) continue;
                         if (x > x_max) break;
                         float t = log10(x / x_min) / log10(x_max / x_min);
                         int x0 = ImLerp(inner_bb.Min.x, inner_bb.Max.x, t);
-                        window->DrawList->AddLine(
-                            ImVec2(x0, y0),
-                            ImVec2(x0, y1),
-                            IM_COL32(200, 200, 200, (i > 1) ? 128 : 255));
+                        if (conf.axis_x.grid_show) {
+                            window->DrawList->AddLine(
+                                ImVec2(x0, y0),
+                                ImVec2(x0, y1),
+                                IM_COL32(200, 200, 200, isSub ? 128 : 255));
+                        }
+                        if (!isSub && (conf.axis_x.label_show_bl || conf.axis_x.label_show_tr)) {
+                            const char* text_end = g.TempBuffer + ImFormatString(g.TempBuffer, IM_ARRAYSIZE(g.TempBuffer), conf.axis_x.label_format, x);
+                            const ImVec2 text_size = CalcTextSize(g.TempBuffer, text_end);
+                            const float text_pos_x = ImClamp(x0 - text_size.x / 2, inner_bb.Min.x, inner_bb.Max.x - text_size.x);
+                            if (conf.axis_x.label_show_tr) {
+                                RenderText(ImVec2(text_pos_x, y0 - text_size.y), g.TempBuffer, text_end, false);
+                            }
+                            if (conf.axis_x.label_show_bl) {
+                                RenderText(ImVec2(text_pos_x, y1), g.TempBuffer, text_end, false);
+                            }
+                        }
                     }
-                    start *= 10.f;
                 }
                 break;
             }
             }
         }
-        if (conf.grid_y.show) {
+        if (conf.axis_y.grid_show || conf.axis_y.label_show_tr || conf.axis_y.label_show_bl) {
             int x0 = inner_bb.Min.x;
             int x1 = inner_bb.Max.x;
-            float cnt = (conf.scale.max - conf.scale.min) / (conf.grid_y.size / conf.grid_y.subticks);
-            float inc = 1.f / cnt;
-            for (int i = 0; i <= cnt; ++i) {
-                int y0 = ImLerp(inner_bb.Min.y, inner_bb.Max.y, i * inc);
-                window->DrawList->AddLine(
-                    ImVec2(x0, y0),
-                    ImVec2(x1, y0),
-                    IM_COL32(0, 0, 0, (i % conf.grid_y.subticks) ? 16 : 64));
+            for (int i = 0; i <= axis_info_y.tick_count; ++i) {
+                const float tick_pos = axis_info_y.tick_first + i * axis_info_y.tick_inc;
+                const bool isSub = i % (conf.axis_y.tick_subs + 1);
+                if (tick_pos < 0.0f) continue;
+                if (tick_pos > 1.0f) break;
+                int y0 = ImLerp(inner_bb.Max.y, inner_bb.Min.y, tick_pos);
+                if (conf.axis_y.grid_show) {
+                    window->DrawList->AddLine(
+                        ImVec2(x0, y0),
+                        ImVec2(x1, y0),
+                        IM_COL32(0, 0, 0, isSub ? 16 : 64));
+                }
+                if (!isSub && (conf.axis_y.label_show_bl || conf.axis_y.label_show_tr)) {
+                    const float y_val = ImLerp(conf.scale.min, conf.scale.max, tick_pos);
+                    const char* text_end = g.TempBuffer + ImFormatString(g.TempBuffer, IM_ARRAYSIZE(g.TempBuffer), conf.axis_y.label_format, y_val);
+                    const ImVec2 text_size = CalcTextSize(g.TempBuffer, text_end);
+                    const float text_pos_y = ImClamp(y0 - text_size.y / 2, inner_bb.Min.y, inner_bb.Max.y - text_size.y);
+                    if (conf.axis_y.label_show_bl) {
+                        // left
+                        RenderText(ImVec2(x0 - axis_info_y.legend_largest.x, text_pos_y), g.TempBuffer, text_end, false);
+                    }
+                    if (conf.axis_y.label_show_tr) {
+                        // right
+                        RenderText(ImVec2(x1, text_pos_y), g.TempBuffer, text_end, false);
+                    }
+                }
             }
         }
 
@@ -266,7 +382,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
 
     // Text overlay
     if (conf.overlay_text)
-        RenderTextClipped(ImVec2(frame_bb.Min.x, frame_bb.Min.y + style.FramePadding.y), frame_bb.Max, conf.overlay_text, NULL, NULL, ImVec2(0.5f,0.0f));
+        RenderTextClipped(ImVec2(overlay_bb.Min.x, overlay_bb.Min.y), overlay_bb.Max, conf.overlay_text, NULL, NULL, ImVec2(0.5f,0.0f));
 
     return status;
 }
