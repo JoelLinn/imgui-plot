@@ -30,7 +30,7 @@ static float rescale_inv(float t, float min, float max, PlotConfig::Scale::Type 
 
 static int cursor_to_idx(const ImVec2& pos, const ImRect& bb, const PlotConfig& conf, float x_min, float x_max) {
     const float t = ImClamp((pos.x - bb.Min.x) / (bb.Max.x - bb.Min.x), 0.0f, 0.9999f);
-    const int v_idx = (int)(rescale_inv(t, x_min, x_max, conf.scale.type) * (conf.values.count - 1));
+    const int v_idx = static_cast<int>(rescale_inv(t, x_min, x_max, conf.scale.type) * static_cast<double>(conf.values.count - 1) + 0.5f);
     IM_ASSERT(v_idx >= 0 && v_idx < conf.values.count);
 
     return v_idx;
