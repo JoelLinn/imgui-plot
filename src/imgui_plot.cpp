@@ -75,10 +75,14 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         true,
         style.FrameRounding);
 
-    if (conf.values.count > 0) {
+    if (inner_bb.GetSize().x <= 0 || inner_bb.GetSize().y <= 0) {
+        return status;
+    }
+
+    if (conf.values.count > 1) {
         int res_w;
         if (conf.skip_small_lines)
-            res_w = ImMin((int)conf.frame_size.x, conf.values.count);
+            res_w = ImMin(static_cast<int>(inner_bb.GetSize().x), conf.values.count);
         else
             res_w = conf.values.count;
         res_w -= 1;
