@@ -9,10 +9,10 @@ namespace ImGui {
 // [0..1] -> [0..1]
 static float rescale(float t, float min, float max, PlotConfig::Scale::Type type) {
     switch (type) {
-    case PlotConfig::Scale::Linear:
+    case PlotConfig::Scale::Type::Linear:
         return t;
-    case PlotConfig::Scale::Log10:
-        return log10(ImLerp(min, max, t) / min) / log10(max / min);
+    case PlotConfig::Scale::Type::Log10:
+        return static_cast<float>(log10(ImLerp(min, max, t) / min) / log10(max / min));
     }
     return 0;
 }
@@ -20,10 +20,10 @@ static float rescale(float t, float min, float max, PlotConfig::Scale::Type type
 // [0..1] -> [0..1]
 static float rescale_inv(float t, float min, float max, PlotConfig::Scale::Type type) {
     switch (type) {
-    case PlotConfig::Scale::Linear:
+    case PlotConfig::Scale::Type::Linear:
         return t;
-    case PlotConfig::Scale::Log10:
-        return (pow(max/min, t) * min - min) / (max - min);
+    case PlotConfig::Scale::Type::Log10:
+        return static_cast<float>((pow(max / min, t) * min - min) / (static_cast<double>(max) - min));
     }
     return 0;
 }
@@ -65,7 +65,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         return status;
 
     const PlotConfig::Buffer* ys_list = conf.values.ys_list;
-    int ys_count = conf.values.ys_count;
+    size_t ys_count = conf.values.ys_count;
     const ImU32* colors = conf.values.colors;
     if (conf.values.ys.raw != nullptr) { // draw only a single plot
         ys_list = &conf.values.ys;
@@ -121,7 +121,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         // Precalculate basic axis parameters since the plot area depends on text widths
         if (conf.axis_x.grid_show || conf.axis_x.label_show_bl || conf.axis_x.label_show_tr) {
             switch (conf.scale.type) {
-            case PlotConfig::Scale::Linear: {
+            case PlotConfig::Scale::Type::Linear: {
                 axis_info_x.tick_count = (x_max - x_min) / (conf.axis_x.tick_distance / (conf.axis_x.tick_subs + 1));
                 axis_info_x.tick_inc = 1.f / axis_info_x.tick_count;
                 // calculate nearest multiple of tick_distance to x_min and do inverse lerp:
@@ -140,7 +140,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                 }
                 break;
             }
-            case PlotConfig::Scale::Log10: {
+            case PlotConfig::Scale::Type::Log10: {
                 if (!conf.axis_x.label_show_bl && !conf.axis_x.label_show_tr) { break; }
                 for (float i = 1; i <= x_max; i *= 10)
                 {
@@ -183,13 +183,13 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             return status;
         }
 
-        int res_w;
+        size_t res_w;
         if (conf.skip_small_lines)
-            res_w = ImMin(static_cast<int>(inner_bb.GetSize().x), static_cast<int>(conf.values.count));
+            res_w = ImMin(static_cast<size_t>(inner_bb.GetSize().x), conf.values.count);
         else
             res_w = conf.values.count;
         res_w -= 1;
-        int item_count = conf.values.count - 1;
+        size_t item_count = conf.values.count - 1;
 
         // Tooltip on hover
         int v_hovered = -1;
@@ -207,16 +207,16 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             0.0f : (1.0f / (conf.scale.max - conf.scale.min));
 
         if (conf.axis_x.grid_show || conf.axis_x.label_show_bl || conf.axis_x.label_show_tr) {
-            int y0 = inner_bb.Min.y;
-            int y1 = inner_bb.Max.y;
+            float y0 = inner_bb.Min.y;
+            float y1 = inner_bb.Max.y;
             switch (conf.scale.type) {
-            case PlotConfig::Scale::Linear: {
+            case PlotConfig::Scale::Type::Linear: {
                 for (int i = 0; i <= axis_info_x.tick_count; ++i) {
                     const float tick_pos = axis_info_x.tick_first + i * axis_info_x.tick_inc;
                     const bool isSub = i % (conf.axis_x.tick_subs + 1);
                     if (tick_pos < 0.0f) continue;
                     if (tick_pos > 1.0f) break;
-                    int x0 = ImLerp(inner_bb.Min.x, inner_bb.Max.x, tick_pos);
+                    float x0 = ImLerp(inner_bb.Min.x, inner_bb.Max.x, tick_pos);
                     if (conf.axis_x.grid_show) {
                         window->DrawList->AddLine(
                             ImVec2(x0, y0),
@@ -240,16 +240,16 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                 }
                 break;
             }
-            case PlotConfig::Scale::Log10: {
+            case PlotConfig::Scale::Type::Log10: {
                 for (int start = 1; start <= x_max; start *= 10)
                 {
                     for (int i = 1; i < 10; ++i) {
-                        float x = start * i;
+                        float x = static_cast<float>(start* i);
                         const bool isSub = i > 1;
                         if (x < x_min) continue;
                         if (x > x_max) break;
-                        float t = log10(x / x_min) / log10(x_max / x_min);
-                        int x0 = ImLerp(inner_bb.Min.x, inner_bb.Max.x, t);
+                        float t = static_cast<float>(log10(x / x_min) / log10(x_max / x_min));
+                        float x0 = ImLerp(inner_bb.Min.x, inner_bb.Max.x, t);
                         if (conf.axis_x.grid_show) {
                             window->DrawList->AddLine(
                                 ImVec2(x0, y0),
@@ -274,14 +274,14 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             }
         }
         if (conf.axis_y.grid_show || conf.axis_y.label_show_tr || conf.axis_y.label_show_bl) {
-            int x0 = inner_bb.Min.x;
-            int x1 = inner_bb.Max.x;
+            float x0 = inner_bb.Min.x;
+            float x1 = inner_bb.Max.x;
             for (int i = 0; i <= axis_info_y.tick_count; ++i) {
                 const float tick_pos = axis_info_y.tick_first + i * axis_info_y.tick_inc;
                 const bool isSub = i % (conf.axis_y.tick_subs + 1);
                 if (tick_pos < 0.0f) continue;
                 if (tick_pos > 1.0f) break;
-                int y0 = ImLerp(inner_bb.Max.y, inner_bb.Min.y, tick_pos);
+                float y0 = ImLerp(inner_bb.Max.y, inner_bb.Min.y, tick_pos);
                 if (conf.axis_y.grid_show) {
                     window->DrawList->AddLine(
                         ImVec2(x0, y0),
@@ -321,7 +321,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             for (int n = 0; n < res_w; n++)
             {
                 const float t1 = t0 + t_step;
-                const int v1_idx = (int)(t0 * item_count + 0.5f);
+                const size_t v1_idx = static_cast<size_t>(t0 * static_cast<double>(item_count) + 0.5);
                 IM_ASSERT(v1_idx >= 0 && v1_idx < conf.values.count);
                 const float v1 = ys_list[i][conf.values.offset + (v1_idx + 1) % conf.values.count];
                 const ImVec2 tp1 = ImVec2(
@@ -365,8 +365,8 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                     FocusWindow(window);
 
                     const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
-                    uint32_t start = conf.values.offset + (v_idx % conf.values.count);
-                    uint32_t end = start;
+                    size_t start = conf.values.offset + (v_idx % conf.values.count);
+                    size_t end = start;
                     if (conf.selection.sanitize_fn)
                         end = conf.selection.sanitize_fn(end - start) + start;
                     if (end < conf.values.offset + conf.values.count) {
@@ -380,8 +380,8 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             if (g.ActiveId == id) {
                 if (g.IO.MouseDown[0]) {
                     const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
-                    const uint32_t start = *conf.selection.start;
-                    uint32_t end = conf.values.offset + (v_idx % conf.values.count);
+                    const size_t start = *conf.selection.start;
+                    size_t end = conf.values.offset + (v_idx % conf.values.count);
                     if (end > start) {
                         if (conf.selection.sanitize_fn)
                             end = conf.selection.sanitize_fn(end - start) + start;
@@ -394,7 +394,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                     ClearActiveID();
                 }
             }
-            float fSelectionStep = 1.0 / item_count;
+            float fSelectionStep = 1.0f / item_count;
             ImVec2 pos0 = ImLerp(inner_bb.Min, inner_bb.Max,
                 ImVec2(rescale(fSelectionStep * *conf.selection.start, x_min, x_max, conf.scale.type), 0.f));
             ImVec2 pos1 = ImLerp(inner_bb.Min, inner_bb.Max,

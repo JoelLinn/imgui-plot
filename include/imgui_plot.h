@@ -50,12 +50,12 @@ struct PlotConfig {
         float min;
         // Maximum plot value
         float max;
-        enum Type {
+        enum class Type {
             Linear,
             Log10,
         };
         // How to scale the x-axis
-        Type type = Linear;
+        Type type = Type::Linear;
     } scale;
     struct Tooltip {
         bool show = false;
@@ -71,12 +71,12 @@ struct PlotConfig {
     } axis_x, axis_y;
     struct Selection {
         bool show = false;
-        uint32_t* start = nullptr;
-        uint32_t* length = nullptr;
+        size_t* start = nullptr;
+        size_t* length = nullptr;
         // "Sanitize" function. Give it selection length, and it will return
         // the "allowed" length. Useful for FFT, where selection must be
         // of power of two
-        uint32_t(*sanitize_fn)(uint32_t) = nullptr;
+        size_t(*sanitize_fn)(size_t) = nullptr;
     } selection;
     struct VerticalLines {
         bool show = false;
