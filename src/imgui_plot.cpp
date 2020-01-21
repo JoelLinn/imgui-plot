@@ -41,6 +41,22 @@ static int cursor_to_idx(const ImVec2& pos, const ImRect& bb, const PlotConfig& 
     return v_idx;
 }
 
+// Helper to read an array index as the correct type
+const float PlotConfig::Buffer::operator[](size_t i) const
+{
+    switch (this->type)
+    {
+    case PlotConfig::Buffer::Type::float32:
+        return this->float32[i];
+    case PlotConfig::Buffer::Type::float64:
+        return static_cast<float>(this->float64[i]);
+    case PlotConfig::Buffer::Type::int32:
+        return static_cast<float>(this->int32[i]);
+    default:
+        return .0f;
+    }
+}
+
 PlotStatus Plot(const char* label, const PlotConfig& conf) {
     PlotStatus status = PlotStatus::nothing;
 
@@ -48,10 +64,10 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
     if (window->SkipItems)
         return status;
 
-    const float* const* ys_list = conf.values.ys_list;
+    const PlotConfig::Buffer* ys_list = conf.values.ys_list;
     int ys_count = conf.values.ys_count;
     const ImU32* colors = conf.values.colors;
-    if (conf.values.ys != nullptr) { // draw only a single plot
+    if (conf.values.ys.raw != nullptr) { // draw only a single plot
         ys_list = &conf.values.ys;
         ys_count = 1;
         colors = &conf.values.color;
@@ -80,11 +96,19 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         style.FrameRounding);
 
     if (conf.values.count > 1) {
-        float x_min = conf.values.offset;
-        float x_max = conf.values.offset + conf.values.count - 1;
-        if (conf.values.xs) {
-            x_min = conf.values.xs[size_t(x_min)];
-            x_max = conf.values.xs[size_t(x_max)];
+        float x_min;
+        float x_max;
+        {
+            auto min = conf.values.offset;
+            auto max = conf.values.offset + conf.values.count - 1;
+            if (conf.values.xs.raw) {
+                x_min = conf.values.xs[min];
+                x_max = conf.values.xs[max];
+            }
+            else {
+                x_min = static_cast<float>(min);
+                x_max = static_cast<float>(max);
+            }
         }
 
         struct AxisInfo {
@@ -161,7 +185,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
 
         int res_w;
         if (conf.skip_small_lines)
-            res_w = ImMin(static_cast<int>(inner_bb.GetSize().x), conf.values.count);
+            res_w = ImMin(static_cast<int>(inner_bb.GetSize().x), static_cast<int>(conf.values.count));
         else
             res_w = conf.values.count;
         res_w -= 1;
@@ -172,7 +196,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         if (conf.tooltip.show && hovered && inner_bb.Contains(g.IO.MousePos)) {
             const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
             const size_t data_idx = conf.values.offset + (v_idx % conf.values.count);
-            const float x0 = conf.values.xs ? conf.values.xs[data_idx] : v_idx;
+            const float x0 = conf.values.xs.raw ? conf.values.xs[data_idx] : v_idx;
             const float y0 = ys_list[0][data_idx]; // TODO: tooltip is only shown for the first y-value!
             SetTooltip(conf.tooltip.format, x0, y0);
             v_hovered = v_idx;

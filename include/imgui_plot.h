@@ -5,23 +5,43 @@
 namespace ImGui {
 // Use this structure to pass the plot data and settings into the Plot function
 struct PlotConfig {
+    // Helper struct to avoid templating overhead
+    struct Buffer {
+        enum class Type {
+            float32,
+            float64,
+            int32
+        } type = Type::float32;
+        union {
+            const void* raw = nullptr;
+            const float* float32;
+            const double* float64;
+            const int32_t* int32;
+        };
+
+        Buffer() : type(Type::float32), raw(nullptr) {}
+        Buffer(const float* data) : type(Type::float32), float32(data) {}
+        Buffer(const double* data) : type(Type::float64), float64(data) {}
+        Buffer(const int32_t* data) : type(Type::int32), int32(data) {}
+        const float operator[] (size_t) const;
+    };
     struct Values {
         // if necessary, you can provide x-axis values
-        const float *xs = nullptr;
+        Buffer xs;
         // array of y values. If null, use ys_list (below)
-        const float *ys = nullptr;
+        Buffer ys;
         // the number of values in each array
-        int count;
+        size_t count;
         // at which offset to start plotting.
         // Warning: count+offset must be <= length of array!
-        int offset = 0;
+        size_t offset = 0;
         // Plot color. If 0, use ImGuiCol_PlotLines.
         ImU32 color = 0;
 
         // in case you need to draw multiple plots at once, use this instead of ys
-        const float **ys_list = nullptr;
+        const Buffer* ys_list = nullptr;
         // the number of plots to draw
-        int ys_count = 0;
+        size_t ys_count = 0;
         // colors for each plot
         const ImU32* colors = nullptr;
     } values;
@@ -60,7 +80,7 @@ struct PlotConfig {
     } selection;
     struct VerticalLines {
         bool show = false;
-        const float* xs = nullptr; // at which x values to draw the lines
+        Buffer xs; // at which x values to draw the lines
         size_t count = 0;
     } v_lines;
     // Set size to -1 to fill parent window
