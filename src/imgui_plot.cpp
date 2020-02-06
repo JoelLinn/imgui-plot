@@ -99,8 +99,8 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         float x_min;
         float x_max;
         {
-            auto min = conf.values.offset;
-            auto max = conf.values.offset + conf.values.count - 1;
+            auto min = 0;
+            auto max = conf.values.count - 1;
             if (conf.values.xs.raw) {
                 x_min = conf.values.xs[min];
                 x_max = conf.values.xs[max];
@@ -195,7 +195,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         int v_hovered = -1;
         if (conf.tooltip.show && hovered && inner_bb.Contains(g.IO.MousePos)) {
             const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
-            const size_t data_idx = conf.values.offset + (v_idx % conf.values.count);
+            const size_t data_idx = v_idx % conf.values.count;
             const float x0 = conf.values.xs.raw ? conf.values.xs[data_idx] : v_idx;
             const float y0 = ys_list[0][data_idx]; // TODO: tooltip is only shown for the first y-value!
             SetTooltip(conf.tooltip.format, x0, y0);
@@ -313,7 +313,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                 if (colors[i]) col_base = colors[i];
                 else col_base = GetColorU32(ImGuiCol_PlotLines);
             }
-            float v0 = ys_list[i][conf.values.offset];
+            float v0 = ys_list[i][0];
             float t0 = 0.0f;
             // Point in the normalized space of our target rectangle
             ImVec2 tp0 = ImVec2(t0, 1.0f - ImSaturate((v0 - conf.scale.min) * inv_scale));
@@ -323,7 +323,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                 const float t1 = t0 + t_step;
                 const size_t v1_idx = static_cast<size_t>(t0 * static_cast<double>(item_count) + 0.5);
                 IM_ASSERT(v1_idx >= 0 && v1_idx < conf.values.count);
-                const float v1 = ys_list[i][conf.values.offset + (v1_idx + 1) % conf.values.count];
+                const float v1 = ys_list[i][(v1_idx + 1) % conf.values.count];
                 const ImVec2 tp1 = ImVec2(
                     rescale(t1, x_min, x_max, conf.scale.type),
                     1.0f - ImSaturate((v1 - conf.scale.min) * inv_scale));
@@ -365,11 +365,11 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                     FocusWindow(window);
 
                     const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
-                    size_t start = conf.values.offset + (v_idx % conf.values.count);
+                    size_t start = v_idx % conf.values.count;
                     size_t end = start;
                     if (conf.selection.sanitize_fn)
                         end = conf.selection.sanitize_fn(end - start) + start;
-                    if (end < conf.values.offset + conf.values.count) {
+                    if (end < conf.values.count) {
                         *conf.selection.start = start;
                         *conf.selection.length = end - start;
                         status = PlotStatus::selection_updated;
@@ -381,11 +381,11 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                 if (g.IO.MouseDown[0]) {
                     const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
                     const size_t start = *conf.selection.start;
-                    size_t end = conf.values.offset + (v_idx % conf.values.count);
+                    size_t end = v_idx % conf.values.count;
                     if (end > start) {
                         if (conf.selection.sanitize_fn)
                             end = conf.selection.sanitize_fn(end - start) + start;
-                        if (end < conf.values.offset + conf.values.count) {
+                        if (end < conf.values.count) {
                             *conf.selection.length = end - start;
                             status = PlotStatus::selection_updated;
                         }

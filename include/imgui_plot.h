@@ -32,9 +32,6 @@ struct PlotConfig {
         Buffer ys;
         // the number of values in each array
         size_t count;
-        // at which offset to start plotting.
-        // Warning: count+offset must be <= length of array!
-        size_t offset = 0;
         // Plot color. If 0, use ImGuiCol_PlotLines.
         ImU32 color = 0;
 
