@@ -24,6 +24,7 @@ struct PlotConfig {
         Buffer(const double* data) : type(Type::float64), float64(data) {}
         Buffer(const int32_t* data) : type(Type::int32), int32(data) {}
         const float operator[] (size_t) const;
+        inline bool IsNullptr() const { return raw == nullptr; }
     };
     struct Values {
         // if necessary, you can provide x-axis values
@@ -83,6 +84,7 @@ struct PlotConfig {
     // Set size to -1 to fill parent window
     ImVec2 frame_size = ImVec2(-1.f, 0.f);
     float line_thickness = 1.f;
+    // Can cause aliasing effects if enabled.
     bool skip_small_lines = true;
     const char* overlay_text = nullptr;
 };

@@ -33,9 +33,31 @@ template<typename T> static inline T lerp_inv(T a, T b, T l) {
     return static_cast<T>((l - a) / (b - a));
 }
 
-static int cursor_to_idx(const ImVec2& pos, const ImRect& bb, const PlotConfig& conf, float x_min, float x_max) {
-    const float t = ImClamp((pos.x - bb.Min.x) / (bb.Max.x - bb.Min.x), 0.0f, 0.9999f);
-    const int v_idx = static_cast<int>(rescale_inv(t, x_min, x_max, conf.scale.type) * static_cast<double>(conf.values.count - 1) + 0.5f);
+static size_t cursor_to_idx(const ImVec2& pos, const ImRect& bb, const PlotConfig& conf, float x_min, float x_max) {
+    const float t = ImClamp(lerp_inv(bb.Min.x, bb.Max.x, pos.x), 0.0f, 0.9999f);
+    const float x = ImLerp(x_min, x_max, rescale_inv(t, x_min, x_max, conf.scale.type));
+
+    size_t v_idx;
+    if (conf.values.xs.IsNullptr()) {
+        v_idx = static_cast<size_t>(x + 0.5);
+    }
+    else {
+        v_idx = 0;
+        float closest_dist = x_max - x_min;
+        for (size_t i = 0; i < conf.values.count; i++)
+        {
+            float dist = x - conf.values.xs[i];
+            if (ImFabs(dist) < closest_dist) {
+                v_idx = i;
+                closest_dist = dist;
+            }
+            // xs is sorted so we can quit here:
+            else if (dist < 0) {
+                break;
+            }
+        }
+    }
+
     IM_ASSERT(v_idx >= 0 && v_idx < conf.values.count);
 
     return v_idx;
@@ -67,7 +89,7 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
     const PlotConfig::Buffer* ys_list = conf.values.ys_list;
     size_t ys_count = conf.values.ys_count;
     const ImU32* colors = conf.values.colors;
-    if (conf.values.ys.raw != nullptr) { // draw only a single plot
+    if (!conf.values.ys.IsNullptr()) { // draw only a single plot
         ys_list = &conf.values.ys;
         ys_count = 1;
         colors = &conf.values.color;
@@ -101,13 +123,13 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
         {
             auto min = 0;
             auto max = conf.values.count - 1;
-            if (conf.values.xs.raw) {
-                x_min = conf.values.xs[min];
-                x_max = conf.values.xs[max];
-            }
-            else {
+            if (conf.values.xs.IsNullptr()) {
                 x_min = static_cast<float>(min);
                 x_max = static_cast<float>(max);
+            }
+            else {
+                x_min = conf.values.xs[min];
+                x_max = conf.values.xs[max];
             }
         }
 
@@ -183,28 +205,16 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             return status;
         }
 
-        size_t res_w;
-        if (conf.skip_small_lines)
-            res_w = ImMin(static_cast<size_t>(inner_bb.GetSize().x), conf.values.count);
-        else
-            res_w = conf.values.count;
-        res_w -= 1;
-        size_t item_count = conf.values.count - 1;
-
         // Tooltip on hover
         int v_hovered = -1;
         if (conf.tooltip.show && hovered && inner_bb.Contains(g.IO.MousePos)) {
-            const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
+            const size_t v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
             const size_t data_idx = v_idx % conf.values.count;
-            const float x0 = conf.values.xs.raw ? conf.values.xs[data_idx] : v_idx;
+            const float x0 = conf.values.xs.IsNullptr() ? v_idx : conf.values.xs[data_idx];
             const float y0 = ys_list[0][data_idx]; // TODO: tooltip is only shown for the first y-value!
             SetTooltip(conf.tooltip.format, x0, y0);
             v_hovered = v_idx;
         }
-
-        const float t_step = 1.0f / (float)res_w;
-        const float inv_scale = (conf.scale.min == conf.scale.max) ?
-            0.0f : (1.0f / (conf.scale.max - conf.scale.min));
 
         if (conf.axis_x.grid_show || conf.axis_x.label_show_bl || conf.axis_x.label_show_tr) {
             float y0 = inner_bb.Min.y;
@@ -305,47 +315,51 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
             }
         }
 
+        const float inv_scale = (conf.scale.min == conf.scale.max) ?
+            0.0f : (1.0f / (conf.scale.max - conf.scale.min));
+
         const ImU32 col_hovered = GetColorU32(ImGuiCol_PlotLinesHovered);
         ImU32 col_base = GetColorU32(ImGuiCol_PlotLines);
 
+        window->DrawList->PushClipRect(inner_bb.Min, inner_bb.Max, true);
+        ImRect inner_bb_clipped = ImRect(window->DrawList->GetClipRectMin(), window->DrawList->GetClipRectMax());
         for (int i = 0; i < ys_count; ++i) {
             if (colors) {
                 if (colors[i]) col_base = colors[i];
                 else col_base = GetColorU32(ImGuiCol_PlotLines);
             }
-            float v0 = ys_list[i][0];
-            float t0 = 0.0f;
             // Point in the normalized space of our target rectangle
-            ImVec2 tp0 = ImVec2(t0, 1.0f - ImSaturate((v0 - conf.scale.min) * inv_scale));
+            ImVec2 tp0 = ImVec2(0.0f, 1.0f - (ys_list[i][0] - conf.scale.min) * inv_scale);
 
-            for (int n = 0; n < res_w; n++)
+            for (size_t n = 1; n < conf.values.count; n++)
             {
-                const float t1 = t0 + t_step;
-                const size_t v1_idx = static_cast<size_t>(t0 * static_cast<double>(item_count) + 0.5);
-                IM_ASSERT(v1_idx >= 0 && v1_idx < conf.values.count);
-                const float v1 = ys_list[i][(v1_idx + 1) % conf.values.count];
+                const float t1 = lerp_inv(x_min, x_max, conf.values.xs.IsNullptr() ? n : conf.values.xs[n]);
                 const ImVec2 tp1 = ImVec2(
                     rescale(t1, x_min, x_max, conf.scale.type),
-                    1.0f - ImSaturate((v1 - conf.scale.min) * inv_scale));
+                    1.0f - (ys_list[i][n] - conf.scale.min) * inv_scale);
 
-            // NB: Draw calls are merged together by the DrawList system. Still, we should render our batch are lower level to save a bit of CPU.
                 ImVec2 pos0 = ImLerp(inner_bb.Min, inner_bb.Max, tp0);
                 ImVec2 pos1 = ImLerp(inner_bb.Min, inner_bb.Max, tp1);
 
-                if (v1_idx == v_hovered) {
-                    window->DrawList->AddCircleFilled(pos0, 3, col_hovered);
+                if (n == v_hovered) {
+                    window->DrawList->AddCircleFilled(pos1, 3, col_hovered);
                 }
 
-                window->DrawList->AddLine(
-                    pos0,
-                    pos1,
-                    col_base,
-                    conf.line_thickness);
 
-                t0 = t1;
-                tp0 = tp1;
+                if (!conf.skip_small_lines || ImLengthSqr(pos1 - pos0) > 1.0f * 1.0f) {
+                    if (inner_bb_clipped.Contains(pos0) || inner_bb_clipped.Contains(pos1)) {
+                        window->DrawList->AddLine(
+                            pos0,
+                            pos1,
+                            col_base,
+                            conf.line_thickness);
+                    }
+                    // discard last line's end point if we skipped due to clipping
+                    tp0 = tp1;
+                }
             }
         }
+        window->DrawList->PopClipRect();
 
         if (conf.v_lines.show) {
             for (size_t i = 0; i < conf.v_lines.count; ++i) {
@@ -364,8 +378,8 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                     SetActiveID(id, window);
                     FocusWindow(window);
 
-                    const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
-                    size_t start = v_idx % conf.values.count;
+                    const size_t v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
+                    size_t start = v_idx;
                     size_t end = start;
                     if (conf.selection.sanitize_fn)
                         end = conf.selection.sanitize_fn(end - start) + start;
@@ -379,9 +393,9 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
 
             if (g.ActiveId == id) {
                 if (g.IO.MouseDown[0]) {
-                    const int v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
+                    const size_t v_idx = cursor_to_idx(g.IO.MousePos, inner_bb, conf, x_min, x_max);
                     const size_t start = *conf.selection.start;
-                    size_t end = v_idx % conf.values.count;
+                    size_t end = v_idx;
                     if (end > start) {
                         if (conf.selection.sanitize_fn)
                             end = conf.selection.sanitize_fn(end - start) + start;
@@ -390,15 +404,25 @@ PlotStatus Plot(const char* label, const PlotConfig& conf) {
                             status = PlotStatus::selection_updated;
                         }
                     }
-                } else {
+                }
+                else {
                     ClearActiveID();
                 }
             }
-            float fSelectionStep = 1.0f / item_count;
+            float x_start;
+            float x_end;
+            if (conf.values.xs.IsNullptr()) {
+                x_start = static_cast<float>(*conf.selection.start);
+                x_end = static_cast<float>(*conf.selection.start + *conf.selection.length);
+            }
+            else {
+                x_start = conf.values.xs[*conf.selection.start];
+                x_end = conf.values.xs[*conf.selection.start + *conf.selection.length];
+            }
             ImVec2 pos0 = ImLerp(inner_bb.Min, inner_bb.Max,
-                ImVec2(rescale(fSelectionStep * *conf.selection.start, x_min, x_max, conf.scale.type), 0.f));
+                ImVec2(rescale(lerp_inv(x_min, x_max, x_start), x_min, x_max, conf.scale.type), 0.f));
             ImVec2 pos1 = ImLerp(inner_bb.Min, inner_bb.Max,
-                ImVec2(rescale(fSelectionStep * (*conf.selection.start + *conf.selection.length), x_min, x_max, conf.scale.type), 1.f));
+                ImVec2(rescale(lerp_inv(x_min, x_max, x_end), x_min, x_max, conf.scale.type), 1.f));
             window->DrawList->AddRectFilled(pos0, pos1, IM_COL32(128, 128, 128, 32));
             window->DrawList->AddRect(pos0, pos1, IM_COL32(128, 128, 128, 128));
         }
